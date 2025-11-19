@@ -50,6 +50,9 @@ shinchan-jungle-run/
 ├── README.md           # Project documentation
 └── requirements.txt    # Python dependencies
 ```
+<img width="489" height="523" alt="image" src="https://github.com/user-attachments/assets/a8ccde9c-0932-4058-9319-b12a846084cb" />
+<img width="497" height="525" alt="Screenshot 2025-11-19 195618" src="https://github.com/user-attachments/assets/52226db5-e0c7-4729-902d-c20fe1b8085e" />
+
 
 ## 🎯 What I Learned
 
