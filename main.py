@@ -2,458 +2,549 @@
 Shinchan Jungle Run - Educational Game
 Created for learning Pygame development
 Fan-made project - Not for commercial use
-All Shinchan characters belong to their respective copyright owners
+All Shinchan characters belong to their respective copyright owners and ai features
 """
+
 import pygame
 import random
 import sys
 import math
+import os
+import traceback
 from pygame import mixer
 
-# Initialize
-pygame.init()
-pygame.mixer.init()
+def safe_init():
+    """Safely initialize pygame with error handling"""
+    try:
+        pygame.init()
+        mixer.init()
+        print("Pygame initialized successfully")
+        return True
+    except Exception as e:
+        print(f"Pygame initialization failed: {e}")
+        return False
 
-WIDTH, HEIGHT = 800, 400
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Shinchan's Jungle Run")
-clock = pygame.time.Clock()
-font = pygame.font.SysFont("segoeui", 40)
-LIGHT_GREEN = (200, 240, 200)
-GREEN = (100, 180, 100)
-DARK_GREEN = (70, 120, 70)
-LIGHT_GRAY = (230, 230, 230)
-GRAY = (180, 180, 180)
-DARK_GRAY = (70, 70, 70)
-WHITE = (250, 250, 250)
-volume = 0.5
-speed = 5
-muted = False
-difficulty = "Normal"
+def load_image_safe(path, default_size=(100, 100), default_color=(200, 150, 150), description=""):
+    """Safely load image or create placeholder"""
+    try:
+        if os.path.exists(path):
+            image = pygame.image.load(path)
+            return pygame.transform.scale(image, default_size)
+        else:
+            # Create a colored rectangle as placeholder
+            surface = pygame.Surface(default_size, pygame.SRCALPHA)
+            pygame.draw.rect(surface, default_color, (0, 0, default_size[0], default_size[1]))
+            # Add text to identify the placeholder
+            if description:
+                font = pygame.font.SysFont('Arial', 12)
+                text = font.render(description, True, (255, 255, 255))
+                text_rect = text.get_rect(center=(default_size[0]//2, default_size[1]//2))
+                surface.blit(text, text_rect)
+            return surface
+    except Exception as e:
+        # Emergency fallback
+        surface = pygame.Surface(default_size, pygame.SRCALPHA)
+        pygame.draw.rect(surface, (255, 0, 0), (0, 0, default_size[0], default_size[1]))
+        return surface
 
+def load_sound_safe(path):
+    """Safely load sound or return silent sound"""
+    try:
+        if os.path.exists(path):
+            return pygame.mixer.Sound(path)
+        else:
+            return pygame.mixer.Sound(buffer=bytearray([]))  # Silent sound
+    except Exception as e:
+        return pygame.mixer.Sound(buffer=bytearray([]))  # Silent sound
 
-# Game Variables
-def reset_game_vars():
-    global player_x, player_y, velocity_y, jump_count, score, distance
-    global choco_count, pudding_count, items, obstacles, bg_x
-    global speed, game_over, game_won, last_space_press, space_pressed
-    global can_double_jump, parents_spawned, parents_rect, volume
-
-    player_x, player_y = 100, 300
-    velocity_y = 0
-    jump_count = 0
-    score = 0
-    choco_count = 0
-    pudding_count = 0
-    distance = 0
-    items = []
-    obstacles = []
-    bg_x = 0
-    speed = 5
-    game_over = False
-    game_won = False
-    last_space_press = 0
-    space_pressed = False
-    can_double_jump = False
-    parents_spawned = False
-    parents_rect = parents_img.get_rect(midbottom=(WIDTH + 2000, 400))
-    volume = 0.7  # Default volume
-
-# Load Images
-bg_img = pygame.transform.scale(pygame.image.load("assets/shinchan_files/jungle_bg.png"), (WIDTH, HEIGHT))
-home_bg = pygame.transform.scale(pygame.image.load("assets/shinchan_files/home_bg.png"), (WIDTH, HEIGHT))
-player_img = pygame.transform.scale(pygame.image.load("assets/shinchan_files/shinchan.png"), (80, 80))
-choco_img = pygame.transform.scale(pygame.image.load("assets/shinchan_files/chocobee.png"), (50, 50))
-pudding_img = pygame.transform.scale(pygame.image.load("assets/shinchan_files/pudding.png"), (50, 50))
-obstacle_img = pygame.transform.scale(pygame.image.load("assets/shinchan_files/obstacle.png"), (100, 100))
-parents_img = pygame.transform.scale(pygame.image.load("assets/shinchan_files/parents.png"), (100, 180))
-
-# Load Sounds
-pygame.mixer.music.load("assets/sounds/bg_music.mp3")
-pygame.mixer.music.set_volume(0.7)
-pygame.mixer.music.play(-1)
-jump_sound = pygame.mixer.Sound("assets/sounds/jump.mp3")
-collect_sound = pygame.mixer.Sound("assets/sounds/collect.mp3")
-win_sound = pygame.mixer.Sound("assets/sounds/win.mp3")
-
-# Utility Functions
-def draw_text(text, x, y, size=40, color=(50, 50, 50), center=False):
-    font = pygame.font.SysFont("segoeui", size, bold=True)
-    label = font.render(text, True, color)
-    rect = label.get_rect()
-    if center:
-        rect.center = (x, y)
-    else:
-        rect.topleft = (x, y)
-    screen.blit(label, rect)
-
-def draw_scoreboard():
-    pygame.draw.rect(screen, (200, 160, 60), (5, 5, 200, 110), 3, border_radius=10)
-    pygame.draw.rect(screen, (50, 50, 50), (5, 5, 200, 110), 1, border_radius=10)
-    
-    draw_text(f"Score:", 15, 10, 20, (200, 160, 60))
-    draw_text(f"{score}", 100, 10, 20, (255, 0, 0))
-    
-    draw_text(f"Distance:", 15, 35, 20, (200, 160, 60))
-    draw_text(f"{min(distance, 2000)}/2000", 100, 35, 20, (255, 0, 0))
-    
-    draw_text(f"Chocobees:", 15, 60, 20, (200, 160, 60))
-    draw_text(f"{choco_count}", 100, 60, 20, (255, 0, 0))
-    
-    draw_text(f"Puddings:", 15, 85, 20, (200, 160, 60))
-    draw_text(f"{pudding_count}", 100, 85, 20, (255, 0, 0))
-
-def draw_button(text, x, y, w, h, color, hover_color, action=None):
+def draw_button(screen, text, x, y, width, height, inactive_color, active_color, text_color=(255, 255, 255), action=None):
+    """Draw a button with hover effect"""
     mouse = pygame.mouse.get_pos()
     click = pygame.mouse.get_pressed()
-    rect = pygame.Rect(x, y, w, h)
-    is_hover = rect.collidepoint(mouse)
-
-    pygame.draw.rect(screen, (180, 180, 180), (x + 4, y + 4, w, h), border_radius=12)
-    pygame.draw.rect(screen, hover_color if is_hover else color, rect, border_radius=12)
-    draw_text(text, x + w // 2, y + h // 2, size=30, color=(255, 255, 255), center=True)
-
-    if is_hover and click[0] == 1 and action:
-        pygame.time.delay(150)
-        action()
-
-def draw_gear_icon(x, y, size=30, color=(100, 100, 100), hover_color=(60, 60, 60)):
-    mouse_pos = pygame.mouse.get_pos()
-    gear_rect = pygame.Rect(x - size//2, y - size//2, size, size)
-    is_hover = gear_rect.collidepoint(mouse_pos)
     
-    current_color = hover_color if is_hover else color
-    thickness = 3
+    button_rect = pygame.Rect(x, y, width, height)
     
-    # Draw gear
-    pygame.draw.circle(screen, current_color, (x, y), size//2, thickness)
-    pygame.draw.circle(screen, current_color, (x, y), size//4, thickness)
+    # Check if mouse is over button
+    if button_rect.collidepoint(mouse):
+        pygame.draw.rect(screen, active_color, button_rect, border_radius=12)
+        if click[0] == 1 and action is not None:
+            action()
+    else:
+        pygame.draw.rect(screen, inactive_color, button_rect, border_radius=12)
     
-    # Draw gear teeth
-    for i in range(8):
-        angle = math.radians(i * 45)
-        outer_x1 = x + (size//2 - 2) * math.cos(angle)
-        outer_y1 = y + (size//2 - 2) * math.sin(angle)
-        outer_x2 = x + (size//2 + 5) * math.cos(angle)
-        outer_y2 = y + (size//2 + 5) * math.sin(angle)
-        pygame.draw.line(screen, current_color, (outer_x1, outer_y1), (outer_x2, outer_y2), thickness)
+    # Add button border
+    pygame.draw.rect(screen, (50, 50, 50), button_rect, 2, border_radius=12)
     
-    return gear_rect
-def show_settings():
-    settings_active = True
-    global volume, speed, muted, difficulty
+    # Button text
+    font = pygame.font.SysFont('Arial', 30)
+    text_surf = font.render(text, True, text_color)
+    text_rect = text_surf.get_rect(center=button_rect.center)
+    screen.blit(text_surf, text_rect)
+    
+    return button_rect
 
-    # Layout - ADD THESE VARIABLES
-    row_gap = 60
-    start_y = HEIGHT // 2 - 120
-    label_x = WIDTH // 2 - 160
-    control_x = WIDTH // 2 + 20
-    slider_width = 200
-    slider_height = 20
+def main():
+    """Main game function with comprehensive error handling"""
+    try:
+        # Initialize pygame
+        if not safe_init():
+            input("Press Enter to exit...")
+            return
 
-    # UI elements
-    volume_slider = pygame.Rect(control_x, start_y, slider_width, slider_height)
-    speed_slider = pygame.Rect(control_x, start_y + row_gap, slider_width, slider_height)
-    mute_button = pygame.Rect(control_x, start_y + row_gap * 2, 160, 40)
-    diff_button = pygame.Rect(control_x, start_y + row_gap * 3, 160, 40)
+        # Screen setup
+        WIDTH, HEIGHT = 800, 400
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        pygame.display.set_caption("Shinchan's Jungle Run")
+        clock = pygame.time.Clock()
 
-    while settings_active:
-        
-        screen.fill(LIGHT_GREEN)
+        # Colors
+        LIGHT_GREEN = (200, 240, 200)
+        GREEN = (100, 180, 100)
+        DARK_GREEN = (70, 120, 70)
+        BRIGHT_GREEN = (120, 220, 120)
+        WHITE = (255, 255, 255)
+        BLACK = (0, 0, 0)
+        RED = (255, 0, 0)
+        BLUE = (0, 100, 255)
+        YELLOW = (255, 255, 0)
+        GOLD = (255, 215, 0)
 
-        # 🎨 Modal background
-        pygame.draw.rect(screen, WHITE, (WIDTH // 2 - 220, HEIGHT // 2 - 180, 440, 400), border_radius=15)
-        pygame.draw.rect(screen, GREEN, (WIDTH // 2 - 220, HEIGHT // 2 - 180, 440, 400), 3, border_radius=15)
+        # Load assets safely
+        # Images
+        bg_img = load_image_safe("assets/shinchan_files/jungle_bg.png", (WIDTH, HEIGHT), (100, 150, 100), "BG")
+        home_bg = load_image_safe("assets/shinchan_files/home_bg.png", (WIDTH, HEIGHT), (150, 200, 150), "HOME")
+        player_img = load_image_safe("assets/shinchan_files/shinchan.png", (80, 80), (255, 150, 150), "SHINCHAN")
+        choco_img = load_image_safe("assets/shinchan_files/chocobee.png", (50, 50), (255, 215, 0), "CHOCO")
+        pudding_img = load_image_safe("assets/shinchan_files/pudding.png", (50, 50), (150, 100, 200), "PUDDING")
+        obstacle_img = load_image_safe("assets/shinchan_files/obstacle.png", (100, 100), (120, 80, 60), "OBSTACLE")
+        parents_img = load_image_safe("assets/shinchan_files/parents.png", (100, 180), (200, 150, 150), "PARENTS")
 
-        # 🏷 Title
-        draw_text("SETTINGS", WIDTH // 2, HEIGHT // 2 - 150, 32, DARK_GREEN, center=True)
+        # Sounds
+        jump_sound = load_sound_safe("assets/sounds/jump.mp3")
+        collect_sound = load_sound_safe("assets/sounds/collect.mp3")
+        win_sound = load_sound_safe("assets/sounds/win.mp3")
+        crash_sound = load_sound_safe("assets/sounds/crash.mp3")
+        double_jump_sound = load_sound_safe("assets/sounds/double_jump.mp3")
+        button_sound = load_sound_safe("assets/sounds/button.mp3")
 
-        # 🔊 Volume row
-        draw_text("Volume:", label_x, start_y + slider_height // 2, 22, DARK_GRAY, center=False)
-        pygame.draw.rect(screen, LIGHT_GRAY, volume_slider, border_radius=10)
-        pygame.draw.rect(screen, DARK_GRAY, volume_slider, 2, border_radius=10)
-        pygame.draw.rect(screen, GREEN,
-                         (volume_slider.x + 2, volume_slider.y + 2,
-                          (volume_slider.width - 4) * volume, volume_slider.height - 4),
-                         border_radius=8)
-        draw_text(f"{int(volume * 100)}%", control_x + slider_width + 10, start_y + 10, 20, DARK_GRAY)
+        # Try to load background music
+        try:
+            if os.path.exists("assets/sounds/bg_music.mp3"):
+                pygame.mixer.music.load("assets/sounds/bg_music.mp3")
+                pygame.mixer.music.set_volume(0.5)
+                pygame.mixer.music.play(-1)
+        except:
+            pass
 
-        # ⚡ Speed row
-        draw_text("Game Speed:", label_x, start_y + row_gap + slider_height // 2, 22, DARK_GRAY, center=False)
-        pygame.draw.rect(screen, LIGHT_GRAY, speed_slider, border_radius=10)
-        pygame.draw.rect(screen, DARK_GRAY, speed_slider, 2, border_radius=10)
-        pygame.draw.rect(screen, GREEN,
-                         (speed_slider.x + 2, speed_slider.y + 2,
-                          (speed_slider.width - 4) * (speed / 10), speed_slider.height - 4),
-                         border_radius=8)
-        draw_text(f"{speed:.1f}", control_x + slider_width + 10, start_y + row_gap + 10, 20, DARK_GRAY)
+        # Font function
+        def get_font(size):
+            return pygame.font.SysFont('Arial', size)
 
-        # 🔇 Sound row
-        draw_text("Sound:", label_x, start_y + row_gap * 2 + 20, 22, DARK_GRAY, center=False)
-        pygame.draw.rect(screen, LIGHT_GRAY, mute_button, border_radius=10)
-        pygame.draw.rect(screen, DARK_GRAY, mute_button, 2, border_radius=10)
-        button_color = GREEN if not muted else (200, 100, 100)
-        pygame.draw.rect(screen, button_color, 
-                        (mute_button.x + 2, mute_button.y + 2, 
-                         mute_button.width - 4, mute_button.height - 4), 
-                        border_radius=8)
-        draw_text("MUTED" if muted else "SOUND ON", mute_button.centerx, mute_button.centery,
-                  22, WHITE, center=True)
+        # Draw text function
+        def draw_text(text, x, y, size=30, color=BLACK, center=False):
+            font = get_font(size)
+            text_surface = font.render(text, True, color)
+            if center:
+                text_rect = text_surface.get_rect(center=(x, y))
+            else:
+                text_rect = text_surface.get_rect(topleft=(x, y))
+            screen.blit(text_surface, text_rect)
+            return text_rect
 
-        # 🎮 Difficulty row
-        draw_text("Difficulty:", label_x, start_y + row_gap * 3 + 20, 22, DARK_GRAY, center=False)
-        pygame.draw.rect(screen, LIGHT_GRAY, diff_button, border_radius=10)
-        pygame.draw.rect(screen, DARK_GRAY, diff_button, 2, border_radius=10)
-        
-        # Color code difficulty
-        if difficulty == "Easy":
-            diff_color = (100, 200, 100)  # Light green
-        elif difficulty == "Normal":
-            diff_color = (100, 150, 200)  # Light blue
-        else:  # Hard
-            diff_color = (200, 100, 100)  # Light red
+        # Game state variables
+        class GameState:
+            def __init__(self):
+                self.reset()
             
-        pygame.draw.rect(screen, diff_color, 
-                        (diff_button.x + 2, diff_button.y + 2, 
-                         diff_button.width - 4, diff_button.height - 4), 
-                        border_radius=8)
-        draw_text(difficulty, diff_button.centerx, diff_button.centery, 22, WHITE, center=True)
+            def reset(self):
+                self.player_x = 100
+                self.player_y = 300
+                self.player_velocity = 0
+                self.gravity = 1
+                self.is_jumping = False
+                self.jump_count = 0  # Track jumps for double jump
+                self.can_double_jump = False  # Can perform double jump
+                self.score = 0
+                self.choco_count = 0
+                self.pudding_count = 0
+                self.distance = 0
+                self.game_speed = 5
+                self.game_over = False
+                self.game_won = False
+                self.items = []  # Collectible items
+                self.obstacles = []  # Obstacles to avoid
+                self.parents_x = WIDTH + 2000  # Parents at the end
+                self.parents_spawned = False
+                self.bg_x = 0  # Background scroll position
+                self.last_jump_time = 0  # For double jump timing
 
-        # ⬅ Back button
-        back_rect = pygame.Rect(WIDTH // 2 - 60, HEIGHT // 2 + 170, 120, 40)
-        pygame.draw.rect(screen, LIGHT_GRAY, back_rect, border_radius=10)
-        pygame.draw.rect(screen, DARK_GRAY, back_rect, 2, border_radius=10)
-        pygame.draw.rect(screen, GREEN, 
-                        (back_rect.x + 2, back_rect.y + 2, 
-                         back_rect.width - 4, back_rect.height - 4), 
-                        border_radius=8)
-        draw_text("BACK", WIDTH // 2, HEIGHT // 2 + 190, 25, WHITE, center=True)
+        game = GameState()
 
-        # 🎮 Event handling
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if back_rect.collidepoint(event.pos):
-                    settings_active = False
+        # Button actions
+        def start_game():
+            button_sound.play()
+            return False  # Exit home screen
 
-                elif volume_slider.collidepoint(event.pos):
-                    volume = max(0, min(1, (event.pos[0] - volume_slider.x) / volume_slider.width))
-                    # In a real game, you would update the sound volume here
+        def restart_game():
+            button_sound.play()
+            game.reset()
 
-                elif speed_slider.collidepoint(event.pos):
-                    speed = max(3, min(10, (event.pos[0] - speed_slider.x) / speed_slider.width * 10))
+        def quit_game():
+            pygame.quit()
+            sys.exit()
 
-                elif mute_button.collidepoint(event.pos):
-                    muted = not muted
-                    # In a real game, you would mute/unmute sounds here
-
-                elif diff_button.collidepoint(event.pos):
-                    # Cycle difficulty: Easy → Normal → Hard → back to Easy
-                    if difficulty == "Easy":
-                        difficulty = "Normal"
-                    elif difficulty == "Normal":
-                        difficulty = "Hard"
-                    else:
-                        difficulty = "Easy"
-
-        pygame.display.update()
-        clock.tick(60)
-
-# State flags
-on_home = True
-reset_game_vars()
-
-def run_game():
-    global player_x, player_y, velocity_y, jump_count, score, distance
-    global choco_count, pudding_count, bg_x, speed, game_over, game_won
-    global last_space_press, space_pressed, can_double_jump, items, obstacles
-    global parents_spawned, parents_rect
-
-    spawn_timer = 0
-    obstacle_timer = 0
-    running = True
-
-    while running:
-        screen.fill(LIGHT_GREEN)
-
-        # Background scroll
-        bg_x -= speed
-        if bg_x <= -WIDTH:
-            bg_x = 0
-        screen.blit(bg_img, (bg_x, 0))
-        screen.blit(bg_img, (bg_x + WIDTH, 0))
-
-        screen.blit(player_img, (player_x, player_y))
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    current_time = pygame.time.get_ticks()
-                    if current_time - last_space_press < 300 and not space_pressed:
-                        if can_double_jump and jump_count < 2:
-                            velocity_y = -20
-                            jump_count += 1
-                            jump_sound.play()
-                            can_double_jump = False
-                    else:
-                        if jump_count < 2:
-                            velocity_y = -20
-                            jump_count += 1
-                            jump_sound.play()
-                            if jump_count == 1:
-                                can_double_jump = True
-                    last_space_press = current_time
-                    space_pressed = True
-                elif event.key == pygame.K_ESCAPE:  # ESC opens settings
-                    show_settings()
-            elif event.type == pygame.KEYUP:
-                if event.key == pygame.K_SPACE:
-                    space_pressed = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                # Check if settings gear was clicked
-                gear_rect = pygame.Rect(WIDTH-40, 10, 30, 30)
-                if gear_rect.collidepoint(event.pos):
-                    show_settings()
-
-        if not game_over and not game_won:
-            # Gravity and ground check
-            velocity_y += 1
-            player_y += velocity_y
-            if player_y >= 300:
-                player_y = 300
-                velocity_y = 0
-                jump_count = 0
-                can_double_jump = False
-
-            distance += speed
+        # Simple home screen
+        home_screen_active = True
+        while home_screen_active:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE:
+                        home_screen_active = False
+                    if event.key == pygame.K_ESCAPE:
+                        pygame.quit()
+                        return
             
-            # Spawn items
-            spawn_timer += 1
-            if spawn_timer > 60 and distance < 2000:
-                kind = random.choice(['choco', 'pudding'])
-                img = choco_img if kind == 'choco' else pudding_img
-                y_pos = random.randint(180, 250)
-                rect = img.get_rect(midbottom=(WIDTH + 50, y_pos))
-                items.append({'type': kind, 'img': img, 'rect': rect})
-                spawn_timer = 0
+            # Draw home screen
+            screen.blit(home_bg, (0, 0))
+            
+            # Title and instructions in YELLOW
+            draw_text("SHINCHAN JUNGLE RUN", WIDTH//2, 80, 50, YELLOW, center=True)
+            draw_text("Collect Chocobees & Puddings!", WIDTH//2, 130, 25, YELLOW, center=True)
+            draw_text("Avoid obstacles and find your parents!", WIDTH//2, 160, 25, YELLOW, center=True)
+            draw_text("SPACE: Jump | Double SPACE: Double Jump", WIDTH//2, 190, 20, YELLOW, center=True)
+            
+            # Draw start button
+            start_button = draw_button(
+                screen, 
+                "START GAME", 
+                WIDTH//2 - 100, 
+                250, 
+                200, 
+                60, 
+                GREEN, 
+                BRIGHT_GREEN, 
+                WHITE, 
+                start_game
+            )
+            
+            # Draw quit button
+            quit_button = draw_button(
+                screen,
+                "QUIT",
+                WIDTH//2 - 100,
+                330,
+                200,
+                50,
+                DARK_GREEN,
+                GREEN,
+                WHITE,
+                quit_game
+            )
+            
+            # Handle button clicks
+            mouse_pos = pygame.mouse.get_pos()
+            mouse_click = pygame.mouse.get_pressed()
+            
+            if start_button.collidepoint(mouse_pos) and mouse_click[0]:
+                home_screen_active = start_game()
+            elif quit_button.collidepoint(mouse_pos) and mouse_click[0]:
+                quit_game()
+            
+            pygame.display.flip()
+            clock.tick(60)
 
-            # Spawn obstacles
-            obstacle_timer += 1
-            if obstacle_timer > 120 and distance < 2000:
-                rect = obstacle_img.get_rect(midbottom=(WIDTH + 50, 400))
-                obstacles.append({'img': obstacle_img, 'rect': rect})
-                obstacle_timer = 0
+        # Timers for spawning objects
+        item_spawn_timer = 0
+        obstacle_spawn_timer = 0
 
-            # Draw and check items
-            for item in items[:]:
-                item['rect'].x -= speed
+        # Main game loop
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_SPACE and not game.game_over and not game.game_won:
+                        current_time = pygame.time.get_ticks()
+                        
+                        # First jump (on ground)
+                        if not game.is_jumping:
+                            game.player_velocity = -18  # First jump force
+                            game.is_jumping = True
+                            game.jump_count = 1
+                            game.can_double_jump = True
+                            jump_sound.play()
+                        
+                        # Double jump (in air, within time window)
+                        elif game.is_jumping and game.can_double_jump and game.jump_count < 2:
+                            # Check if we're within double jump window (300ms after first jump)
+                            if current_time - game.last_jump_time < 300:
+                                game.player_velocity = -16  # Slightly less force for double jump
+                                game.jump_count = 2
+                                game.can_double_jump = False  # Can't triple jump
+                                if double_jump_sound.get_length() > 0:  # Only play if sound exists
+                                    double_jump_sound.play()
+                            else:
+                                # Too late for double jump
+                                game.can_double_jump = False
+                        
+                        game.last_jump_time = current_time
+                        
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+
+            if not game.game_over and not game.game_won:
+                # Apply gravity
+                game.player_velocity += game.gravity
+                game.player_y += game.player_velocity
+
+                # Ground collision
+                if game.player_y >= 300:
+                    game.player_y = 300
+                    game.player_velocity = 0
+                    game.is_jumping = False
+                    game.jump_count = 0
+                    game.can_double_jump = False
+
+                # Update distance and speed
+                game.distance += game.game_speed
+                if game.distance % 500 == 0:  # Increase speed every 500 units
+                    game.game_speed += 0.5
+
+                # Scroll background
+                game.bg_x -= game.game_speed
+                if game.bg_x <= -WIDTH:
+                    game.bg_x = 0
+
+                # Spawn collectible items
+                item_spawn_timer += 1
+                if item_spawn_timer > 60:  # Spawn every 60 frames
+                    item_type = random.choice(['choco', 'pudding'])
+                    item_img = choco_img if item_type == 'choco' else pudding_img
+                    item_y = random.randint(200, 280)  # Random height
+                    game.items.append({
+                        'type': item_type,
+                        'img': item_img,
+                        'rect': pygame.Rect(WIDTH, item_y, 40, 40),
+                        'collected': False
+                    })
+                    item_spawn_timer = 0
+
+                # Spawn obstacles
+                obstacle_spawn_timer += 1
+                if obstacle_spawn_timer > 90:  # Spawn every 90 frames
+                    game.obstacles.append({
+                        'img': obstacle_img,
+                        'rect': pygame.Rect(WIDTH, 320, 60, 60)
+                    })
+                    obstacle_spawn_timer = 0
+
+                # Update items
+                for item in game.items[:]:
+                    item['rect'].x -= game.game_speed
+                    
+                    # Check collection
+                    player_rect = pygame.Rect(game.player_x, game.player_y, 60, 60)
+                    if player_rect.colliderect(item['rect']) and not item['collected']:
+                        item['collected'] = True
+                        collect_sound.play()
+                        game.score += 1
+                        if item['type'] == 'choco':
+                            game.choco_count += 1
+                        else:
+                            game.pudding_count += 1
+                            game.score += 2  # Extra points for pudding
+                        game.items.remove(item)
+                    elif item['rect'].right < 0:
+                        game.items.remove(item)
+
+                # Update obstacles
+                for obstacle in game.obstacles[:]:
+                    obstacle['rect'].x -= game.game_speed
+                    
+                    # Check collision
+                    player_rect = pygame.Rect(game.player_x, game.player_y, 60, 60)
+                    if player_rect.colliderect(obstacle['rect']):
+                        game.game_over = True
+                        crash_sound.play()
+                    elif obstacle['rect'].right < 0:
+                        game.obstacles.remove(obstacle)
+
+                # Check if parents should appear
+                if game.distance >= 1500 and not game.parents_spawned:
+                    game.parents_spawned = True
+
+                # Update parents position
+                if game.parents_spawned:
+                    game.parents_x -= game.game_speed
+                    
+                    # Check if reached parents
+                    player_rect = pygame.Rect(game.player_x, game.player_y, 60, 60)
+                    parents_rect = pygame.Rect(game.parents_x, 220, 80, 160)
+                    if player_rect.colliderect(parents_rect):
+                        game.game_won = True
+                        win_sound.play()
+
+            # Draw everything
+            screen.fill(LIGHT_GREEN)
+            
+            # Draw scrolling background
+            screen.blit(bg_img, (game.bg_x, 0))
+            screen.blit(bg_img, (game.bg_x + WIDTH, 0))
+            
+            # Draw collectible items
+            for item in game.items:
                 screen.blit(item['img'], item['rect'])
-                if pygame.Rect(player_x, player_y, 80, 80).colliderect(item['rect']):
-                    collect_sound.play()
-                    if item['type'] == 'choco':
-                        score += 1
-                        choco_count += 1
-                    else:
-                        score += 3
-                        pudding_count += 1
-                    items.remove(item)
-                elif item['rect'].right < 0:
-                    items.remove(item)
-
-            # Draw and check obstacles
-            for obs in obstacles[:]:
-                obs['rect'].x -= speed
-                screen.blit(obs['img'], obs['rect'])
-                if pygame.Rect(player_x, player_y, 80, 80).colliderect(obs['rect']):
-                    game_over = True
-                elif obs['rect'].right < 0:
-                    obstacles.remove(obs)
-
-            # Draw parents at the end
-            if distance >= 2000 - WIDTH and not parents_spawned:
-                parents_spawned = True
             
-            if parents_spawned:
-                parents_rect.x -= speed
-                screen.blit(parents_img, parents_rect)
+            # Draw obstacles
+            for obstacle in game.obstacles:
+                screen.blit(obstacle['img'], obstacle['rect'])
+            
+            # Draw parents if spawned
+            if game.parents_spawned:
+                screen.blit(parents_img, (game.parents_x, 220))
+            
+            # Draw player
+            screen.blit(player_img, (game.player_x, game.player_y))
+            
+            # Draw jump indicator
+            if game.is_jumping and game.can_double_jump and game.jump_count == 1:
+                # Show double jump available indicator
+                indicator_color = BLUE
+                pygame.draw.circle(screen, indicator_color, (game.player_x + 40, game.player_y - 20), 8)
+
+            # Draw UI
+            draw_text(f"Score: {game.score}", 20, 20, 25, BLACK)
+            draw_text(f"Chocobees: {game.choco_count}", 20, 50, 20, BLACK)
+            draw_text(f"Puddings: {game.pudding_count}", 20, 75, 20, BLACK)
+            draw_text(f"Distance: {min(game.distance, 2000)}/2000", 20, 100, 20, BLACK)
+            
+            # Draw jump status
+            if game.jump_count == 1:
+                draw_text("Jump: 1/2", WIDTH - 80, 20, 18, BLUE)
+            elif game.jump_count == 2:
+                draw_text("Jump: 2/2", WIDTH - 80, 20, 18, RED)
+            else:
+                draw_text("Jump: 0/2", WIDTH - 80, 20, 18, BLACK)
+            
+            # Draw instructions
+            if not game.game_over and not game.game_won:
+                draw_text("SPACE: Jump", WIDTH - 100, 45, 16, BLACK)
+                draw_text("Double SPACE: Double Jump", WIDTH - 130, 65, 16, BLACK)
+            
+            # Game over screen
+            if game.game_over:
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 150))
+                screen.blit(overlay, (0, 0))
                 
-                if pygame.Rect(player_x, player_y, 60, 60).colliderect(parents_rect):
-                    game_won = True
-                    win_sound.play()
-
-            draw_scoreboard()
+                draw_text("GAME OVER", WIDTH//2, HEIGHT//2 - 80, 60, RED, center=True)
+                draw_text(f"Final Score: {game.score}", WIDTH//2, HEIGHT//2 - 30, 30, WHITE, center=True)
+                
+                # Restart button
+                restart_button = draw_button(
+                    screen,
+                    "PLAY AGAIN",
+                    WIDTH//2 - 100,
+                    HEIGHT//2 + 20,
+                    200,
+                    50,
+                    GREEN,
+                    BRIGHT_GREEN,
+                    WHITE,
+                    restart_game
+                )
+                
+                # Quit button
+                menu_button = draw_button(
+                    screen,
+                    "MAIN MENU",
+                    WIDTH//2 - 100,
+                    HEIGHT//2 + 90,
+                    200,
+                    50,
+                    DARK_GREEN,
+                    GREEN,
+                    WHITE,
+                    lambda: [restart_game(), setattr(game, 'game_over', False), setattr(game, 'game_won', False)]
+                )
+                
+                # Handle button clicks
+                mouse_pos = pygame.mouse.get_pos()
+                mouse_click = pygame.mouse.get_pressed()
+                
+                if restart_button.collidepoint(mouse_pos) and mouse_click[0]:
+                    restart_game()
+                elif menu_button.collidepoint(mouse_pos) and mouse_click[0]:
+                    restart_game()
+                    game.game_over = False
+                    game.game_won = False
+                    # Return to home screen would need additional logic
             
-            # Draw settings gear (top right)
-            gear_rect = draw_gear_icon(WIDTH-25, 25)
-
-        elif game_won:
-            draw_text("You found your parents!", WIDTH // 2, HEIGHT // 2 - 60, size=50, center=True)
-            draw_text("Game Completed Successfully!", WIDTH // 2, HEIGHT // 2 - 10, size=40, center=True)
-            draw_text(f"Final Score: {score}", WIDTH // 2, HEIGHT // 2 + 40, size=40, center=True)
-            draw_text("Press R to Restart", WIDTH // 2, HEIGHT // 2 + 100, center=True)
+            # Game won screen
+            if game.game_won:
+                overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 100, 0, 150))
+                screen.blit(overlay, (0, 0))
+                
+                draw_text("YOU WIN!", WIDTH//2, HEIGHT//2 - 80, 60, GOLD, center=True)
+                draw_text("You found your parents!", WIDTH//2, HEIGHT//2 - 30, 30, WHITE, center=True)
+                draw_text(f"Final Score: {game.score}", WIDTH//2, HEIGHT//2 + 10, 30, WHITE, center=True)
+                
+                # Restart button
+                restart_button = draw_button(
+                    screen,
+                    "PLAY AGAIN",
+                    WIDTH//2 - 100,
+                    HEIGHT//2 + 50,
+                    200,
+                    50,
+                    GREEN,
+                    BRIGHT_GREEN,
+                    WHITE,
+                    restart_game
+                )
+                
+                # Menu button
+                menu_button = draw_button(
+                    screen,
+                    "MAIN MENU",
+                    WIDTH//2 - 100,
+                    HEIGHT//2 + 120,
+                    200,
+                    50,
+                    DARK_GREEN,
+                    GREEN,
+                    WHITE,
+                    lambda: [restart_game(), setattr(game, 'game_over', False), setattr(game, 'game_won', False)]
+                )
+                
+                # Handle button clicks
+                mouse_pos = pygame.mouse.get_pos()
+                mouse_click = pygame.mouse.get_pressed()
+                
+                if restart_button.collidepoint(mouse_pos) and mouse_click[0]:
+                    restart_game()
+                elif menu_button.collidepoint(mouse_pos) and mouse_click[0]:
+                    restart_game()
+                    game.game_over = False
+                    game.game_won = False
             
-            if pygame.key.get_pressed()[pygame.K_r]:
-                reset_game_vars()
-                return
+            pygame.display.flip()
+            clock.tick(60)
 
-        else:  # Game over
-            draw_text("GAME OVER", WIDTH // 2, HEIGHT // 2 - 40, size=60, center=True)
-            draw_text("Press R to Restart", WIDTH // 2, HEIGHT // 2 + 10, center=True)
-            
-            if pygame.key.get_pressed()[pygame.K_r]:
-                reset_game_vars()
-                return
+        print("Game ended normally")
+        
+    except Exception as e:
+        print(f"Game crashed with error: {e}")
+        traceback.print_exc()
+        input("Press Enter to exit...")
+    
+    finally:
+        pygame.quit()
 
-        pygame.display.update()
-        clock.tick(60)
-
-def home_screen():
-    global on_home
-    while on_home:
-        screen.blit(home_bg, (0, 0))
-
-        # 🎨 Base color theme (teal-like tones)
-        base_color = (0, 128, 128)   # Normal teal
-        button_color = (0, 100, 100) # Darker teal for button
-        text_color = (100, 200, 200) # Lighter teal for text
-
-        # ✅ Draw button with shades of teal
-        draw_button("Start Game", WIDTH // 2 - 100, 280, 200, 60,
-                    button_color, base_color, start_game)
-
-        # ✅ Draw text in a lighter shade of teal
-        draw_text("Help Shinchan collect Chocobees & Puddings!",
-                  WIDTH // 2, 140, size=25, color=text_color, center=True)
-
-        # ⚙️ Draw settings gear on home screen
-        gear_rect = draw_gear_icon(WIDTH - 25, 25)
-
-        # 🎮 Handle events
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if gear_rect.collidepoint(event.pos):
-                    show_settings()
-
-        pygame.display.update()
-        clock.tick(60)
-
-
-def start_game():
-    global on_home
-    on_home = False
-    reset_game_vars()
-    run_game()
-    on_home = True
-    home_screen()
-
-
-# 🚀 Start game
-home_screen()
+if __name__ == "__main__":
+    main()
